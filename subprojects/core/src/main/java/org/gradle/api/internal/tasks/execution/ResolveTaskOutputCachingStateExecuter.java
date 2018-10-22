@@ -48,17 +48,18 @@ public class ResolveTaskOutputCachingStateExecuter implements TaskExecuter {
     private static final TaskOutputCachingState DISABLED = DefaultTaskOutputCachingState.disabled(BUILD_CACHE_DISABLED, "Task output caching is disabled");
     private static final TaskOutputCachingState CACHING_NOT_ENABLED = DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.NOT_ENABLED_FOR_TASK, "Caching has not been enabled for the task");
     private static final TaskOutputCachingState NO_OUTPUTS_DECLARED = DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.NO_OUTPUTS_DECLARED, "No outputs declared");
-    private final boolean taskOutputCacheEnabled;
+
+    private final boolean buildCacheEnabled;
     private final TaskExecuter delegate;
 
-    public ResolveTaskOutputCachingStateExecuter(boolean taskOutputCacheEnabled, TaskExecuter delegate) {
-        this.taskOutputCacheEnabled = taskOutputCacheEnabled;
+    public ResolveTaskOutputCachingStateExecuter(boolean buildCacheEnabled, TaskExecuter delegate) {
+        this.buildCacheEnabled = buildCacheEnabled;
         this.delegate = delegate;
     }
 
     @Override
     public TaskExecuterResult execute(TaskInternal task, TaskStateInternal state, TaskExecutionContext context) {
-        if (taskOutputCacheEnabled) {
+        if (buildCacheEnabled) {
             TaskOutputCachingState taskOutputCachingState = getCachingState(
                 context.getTaskProperties(),
                 context.getBuildCacheKey(),
