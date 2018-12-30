@@ -29,7 +29,7 @@ import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.tasks.Copy
 import org.gradle.gradlebuild.PublicApi
-import org.gradle.gradlebuild.docs.PegDown
+import org.gradle.gradlebuild.docs.RenderMarkdownTask
 import org.gradle.kotlin.dsl.*
 import org.gradle.plugins.ide.eclipse.model.AbstractClasspathEntry
 import org.gradle.plugins.ide.eclipse.model.Classpath
@@ -41,9 +41,7 @@ import org.gradle.plugins.ide.idea.model.Module
 import org.gradle.plugins.ide.idea.model.ModuleLibrary
 import org.jetbrains.gradle.ext.ActionDelegationConfig
 import org.jetbrains.gradle.ext.Application
-import org.jetbrains.gradle.ext.CodeStyleConfig
 import org.jetbrains.gradle.ext.CopyrightConfiguration
-import org.jetbrains.gradle.ext.ForceBraces.FORCE_BRACES_ALWAYS
 import org.jetbrains.gradle.ext.GroovyCompilerConfiguration
 import org.jetbrains.gradle.ext.IdeaCompilerConfiguration
 import org.jetbrains.gradle.ext.Inspection
@@ -52,6 +50,7 @@ import org.jetbrains.gradle.ext.Make
 import org.jetbrains.gradle.ext.ProjectSettings
 import org.jetbrains.gradle.ext.Remote
 import org.jetbrains.gradle.ext.RunConfiguration
+import org.jetbrains.gradle.ext.TaskTriggersConfig
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -120,9 +119,9 @@ open class IdePlugin : Plugin<Project> {
             eclipse {
                 classpath {
                     file.whenMerged(Action<Classpath> {
-                        //There are classes in here not designed to be compiled, but just used in our testing
+                        // There are classes in here not designed to be compiled, but just used in our testing
                         entries.removeAll { it is AbstractClasspathEntry && it.path.contains("src/integTest/resources") }
-                        //Workaround for some projects referring to themselves as dependent projects
+                        // Workaround for some projects referring to themselves as dependent projects
                         entries.removeAll { it is AbstractClasspathEntry && it.path.contains("$project.name") && it.kind == "src" }
                         // Remove references to libraries in the build folder
                         entries.removeAll { it is AbstractClasspathEntry && it.path.contains("$project.name/build") && it.kind == "lib" }
@@ -219,16 +218,12 @@ open class IdePlugin : Plugin<Project> {
                 settings {
                     configureCompilerSettings(rootProject)
                     configureCopyright()
-                    configureCodeStyle()
                     // TODO The idea-ext plugin does not yet support customizing inspections.
                     // TODO Delete .idea/inspectionProfiles and uncomment the code below when it does
                     // configureInspections()
                     configureRunConfigurations(rootProject)
                     doNotDetectFrameworks("android", "web")
-                    delegateActions {
-                        delegateBuildRunToGradle = false
-                        testRunner = ActionDelegationConfig.TestRunner.PLATFORM
-                    }
+                    configureSyncTasks(subprojects)
                 }
             }
         }
@@ -283,22 +278,51 @@ open class IdePlugin : Plugin<Project> {
 
     private
     fun ProjectSettings.configureRunConfigurations(rootProject: Project) {
+        // Remove the `isExecutingIdeaTask` variant of run configurations once we completely migrated to the native IDEA import
+        // See: https://github.com/gradle/gradle-private/issues/1675
+        val isExecutingIdeaTask = rootProject.gradle.startParameter.taskNames.contains("idea")
         runConfigurations {
-            val gradleRunners = mapOf(
-                "Regenerate IDEA metadata" to "idea",
-                "Regenerate Int Test Image" to "prepareVersionsInfo intTestImage publishLocalArchives"
-            )
+            val gradleRunners = if (isExecutingIdeaTask) {
+                mapOf(
+                    "Regenerate IDEA metadata" to "idea",
+                    "Regenerate Int Test Image" to "prepareVersionsInfo intTestImage publishLocalArchives"
+                )
+            } else {
+                mapOf(
+                    "Regenerate Int Test Image" to "prepareVersionsInfo intTestImage publishLocalArchives"
+                )
+            }
             gradleRunners.forEach { (name, tasks) ->
                 create<Application>(name) {
                     mainClass = "org.gradle.testing.internal.util.GradlewRunner"
                     programParameters = tasks
                     workingDirectory = rootProject.projectDir.absolutePath
-                    moduleName = "internalTesting"
+                    moduleName = if (isExecutingIdeaTask) {
+                        "internalTesting"
+                    } else {
+                        "org.gradle.internalTesting.main"
+                    }
                     envs = mapOf("TERM" to "xterm")
                     beforeRun {
                         create<Make>("make") {
                             enabled = false
                         }
+                    }
+                }
+            }
+            create<Application>("Run Gradle") {
+                mainClass = "org.gradle.debug.GradleRunConfiguration"
+                programParameters = "help"
+                workingDirectory = rootProject.projectDir.absolutePath
+                moduleName = if (isExecutingIdeaTask) {
+                    "integTest"
+                } else {
+                    "org.gradle.integTest.integTest"
+                }
+                jvmArgs = "-Dorg.gradle.daemon=false"
+                beforeRun {
+                    create<Make>("make") {
+                        enabled = false
                     }
                 }
             }
@@ -354,6 +378,28 @@ open class IdePlugin : Plugin<Project> {
                                 vmParameters = getDefaultJunitVmParameters(docsProject)
                                 envs = mapOf("LANG" to lang)
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private
+    fun ProjectSettings.configureSyncTasks(subprojects: Set<Project>) {
+        subprojects.forEach { subproject ->
+            subproject.run {
+                afterEvaluate {
+                    taskTriggers {
+                        val classpathManifest = tasks.findByName("classpathManifest")
+                        if (classpathManifest != null) {
+                            afterSync(classpathManifest)
+                        }
+                        when (subproject.name) {
+                            "baseServices" -> afterSync(tasks.getByName("buildReceiptResource"))
+                            "core" -> afterSync(tasks.getByName("pluginsManifest"), tasks.getByName("implementationPluginsManifest"))
+                            "docs" -> afterSync(tasks.getByName("defaultImports"))
+                            "internalIntegTesting" -> afterSync(tasks.getByName("prepareVersionsInfo"))
                         }
                     }
                 }
@@ -529,8 +575,9 @@ open class IdePlugin : Plugin<Project> {
     private
     fun getDefaultJunitVmParameters(docsProject: Project): String {
         val rootProject = docsProject.rootProject
-        val releaseNotesMarkdown: PegDown by docsProject.tasks
+        val releaseNotesMarkdown: RenderMarkdownTask by docsProject.tasks
         val releaseNotes: Copy by docsProject.tasks
+        val distsDir = rootProject.layout.buildDirectory.dir(rootProject.base.distsDirName)
         val vmParameter = mutableListOf(
             "-ea",
             "-Dorg.gradle.docs.releasenotes.source=${releaseNotesMarkdown.markdownFile}",
@@ -540,19 +587,18 @@ open class IdePlugin : Plugin<Project> {
             "-DintegTest.gradleGeneratedApiJarCacheDir=\$MODULE_DIR\$/build/generatedApiJars",
             "-DintegTest.libsRepo=${rootProject.file("build/repo").absolutePath}",
             "-Dorg.gradle.integtest.daemon.registry=${rootProject.file("build/daemon").absolutePath}",
-            "-DintegTest.distsDir=${rootProject.base.distsDir.absolutePath}",
+            "-DintegTest.distsDir=${distsDir.get().asFile.absolutePath}",
             "-Dorg.gradle.public.api.includes=${PublicApi.includes.joinToString(":")}",
             "-Dorg.gradle.public.api.excludes=${PublicApi.excludes.joinToString(":")}",
             "-Dorg.gradle.integtest.executer=embedded",
-            "-Dorg.gradle.integtest.versions=latest",
-            "-Dorg.gradle.integtest.native.toolChains=default",
-            "-Dorg.gradle.integtest.multiversion=default",
+            "-Dorg.gradle.integtest.versions=default",
             "-Dorg.gradle.integtest.testkit.compatibility=current",
             "-Xmx512m",
             "--add-opens", "java.base/java.lang=ALL-UNNAMED",
             "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED",
             "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
-            "--add-opens", "java.base/java.util=ALL-UNNAMED"
+            "--add-opens", "java.base/java.util=ALL-UNNAMED",
+            "--add-opens", "java.prefs/java.util.prefs=ALL-UNNAMED"
         )
         return vmParameter.joinToString(" ") {
             if (it.contains(" ") || it.contains("\$")) "\"$it\""
@@ -573,6 +619,9 @@ val Project.rootExcludeDirs
 fun IdeaProject.settings(configuration: ProjectSettings.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
 
 
+fun ProjectSettings.taskTriggers(configuration: TaskTriggersConfig.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
+
+
 fun ProjectSettings.compiler(configuration: IdeaCompilerConfiguration.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
 
 
@@ -580,9 +629,6 @@ fun ProjectSettings.groovyCompiler(configuration: GroovyCompilerConfiguration.()
 
 
 fun ProjectSettings.copyright(configuration: CopyrightConfiguration.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
-
-
-fun ProjectSettings.codeStyle(configuration: CodeStyleConfig.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
 
 
 fun ProjectSettings.delegateActions(configuration: ActionDelegationConfig.() -> kotlin.Unit) = (this as ExtensionAware).configure(configuration)
@@ -700,39 +746,6 @@ fun Element.inspectionTool(clazz: String, level: String = "INFORMATION", enabled
         .attr("enabled", enabled.toString())
         .attr("level", level)
         .attr("enabled_by_default", "false")
-}
-
-
-private
-fun ProjectSettings.configureCodeStyle() {
-    codeStyle {
-        @Suppress("DEPRECATION")
-        USE_SAME_INDENTS = true // deprecated!
-        hardWrapAt = 200
-        java {
-            classCountToUseImportOnDemand = 999
-            alignParameterDescriptions = false
-            alignThrownExceptionDescriptions = false
-            keepEmptyParamTags = false
-            keepEmptyThrowsTags = false
-            keepEmptyReturnTags = false
-            wrapCommentsAtRightMargin = true
-            keepControlStatementInOneLine = false
-            generatePTagOnEmptyLines = false
-            ifForceBraces = FORCE_BRACES_ALWAYS
-            doWhileForceBraces = FORCE_BRACES_ALWAYS
-            whileForceBraces = FORCE_BRACES_ALWAYS
-            forForceBraces = FORCE_BRACES_ALWAYS
-        }
-        groovy {
-            classCountToUseImportOnDemand = 999
-            alignMultilineNamedArguments = false
-            ifForceBraces = FORCE_BRACES_ALWAYS
-            doWhileForceBraces = FORCE_BRACES_ALWAYS
-            whileForceBraces = FORCE_BRACES_ALWAYS
-            forForceBraces = FORCE_BRACES_ALWAYS
-        }
-    }
 }
 
 

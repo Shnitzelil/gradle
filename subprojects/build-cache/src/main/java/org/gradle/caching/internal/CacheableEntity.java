@@ -16,9 +16,28 @@
 
 package org.gradle.caching.internal;
 
+import org.gradle.api.Describable;
+import org.gradle.internal.file.TreeType;
+
+import java.io.File;
+
 /**
  * An entity that can potentially be stored in the build cache.
  */
-public interface CacheableEntity {
-    String getPath();
+public interface CacheableEntity extends Describable {
+    String getIdentity();
+
+    void visitOutputTrees(CacheableTreeVisitor visitor);
+
+    void visitLocalState(LocalStateVisitor visitor);
+
+    @FunctionalInterface
+    interface CacheableTreeVisitor {
+        void visitOutputTree(String name, TreeType type, File root);
+    }
+
+    @FunctionalInterface
+    interface LocalStateVisitor {
+        void visitLocalStateRoot(File localStateRoot);
+    }
 }

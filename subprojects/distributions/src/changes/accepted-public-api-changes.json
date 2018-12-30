@@ -1,20 +1,16 @@
 {
    "acceptedApiChanges": [
-       {
-           "type": "org.gradle.plugin.devel.tasks.ValidateTaskProperties",
-           "member": "Class org.gradle.plugin.devel.tasks.ValidateTaskProperties",
-           "acceptation": "Internal interface to create bridge methods for backwards compatibility",
-           "changes": [
-               "org.gradle.plugin.devel.tasks.internal.ValidateTaskPropertiesBackwardsCompatibleAdapter"
-           ]
-       },
-       {
-           "type": "org.gradle.plugin.devel.tasks.ValidateTaskProperties",
-           "member": "Constructor ValidateTaskProperties",
-           "acceptation": "Task class is not meant for subclassing",
-           "changes": [
-               "Constructor has been removed"
-           ]
-       }
+      {
+         "type": "org.gradle.api.publish.maven.tasks.GenerateMavenPom",
+         "member": "Method org.gradle.api.publish.maven.tasks.GenerateMavenPom.withCompileScopeAttributes(org.gradle.api.internal.attributes.ImmutableAttributes)",
+         "acceptation": "Internal method used for attribute set injection",
+         "changes": []
+      },
+      {
+         "type": "org.gradle.api.publish.maven.tasks.GenerateMavenPom",
+         "member": "Method org.gradle.api.publish.maven.tasks.GenerateMavenPom.withRuntimeScopeAttributes(org.gradle.api.internal.attributes.ImmutableAttributes)",
+         "acceptation": "Internal method used for attribute set injection",
+         "changes": []
+      }
    ]
 }

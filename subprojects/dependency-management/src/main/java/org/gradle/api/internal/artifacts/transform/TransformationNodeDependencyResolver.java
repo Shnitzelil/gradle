@@ -37,7 +37,7 @@ public class TransformationNodeDependencyResolver implements DependencyResolver 
     public boolean resolve(Task task, Object node, Action<? super Node> resolveAction) {
         if (node instanceof DefaultTransformationDependency) {
             DefaultTransformationDependency transformation = (DefaultTransformationDependency) node;
-            Collection<TransformationNode> transformations = transformationNodeFactory.getOrCreate(transformation.getArtifacts(), transformation.getTransformation());
+            Collection<TransformationNode> transformations = transformationNodeFactory.getOrCreate(transformation.getArtifacts(), transformation.getTransformation(), transformation.getDependenciesResolver());
             for (TransformationNode transformationNode : transformations) {
                 resolveAction.execute(transformationNode);
             }
@@ -47,7 +47,7 @@ public class TransformationNodeDependencyResolver implements DependencyResolver 
     }
 
     @Override
-    public boolean attachActionTo(Task task, Action<? super Task> action) {
+    public boolean attachActionTo(Node value, Action<? super Task> action) {
         return false;
     }
 }

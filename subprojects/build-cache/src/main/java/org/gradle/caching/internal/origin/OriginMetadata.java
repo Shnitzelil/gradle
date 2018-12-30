@@ -24,6 +24,16 @@ public class OriginMetadata {
     private final UniqueId buildInvocationId;
     private final long executionTime;
 
+    @Deprecated
+    public static OriginMetadata fromCurrentBuild(UniqueId buildInvocationId, long executionTime) {
+        return new OriginMetadata(buildInvocationId, executionTime);
+    }
+
+    @Deprecated
+    public static OriginMetadata fromPreviousBuild(UniqueId buildInvocationId, long executionTime) {
+        return new OriginMetadata(buildInvocationId, executionTime);
+    }
+
     public OriginMetadata(UniqueId buildInvocationId, long executionTime) {
         this.buildInvocationId = Preconditions.checkNotNull(buildInvocationId, "buildInvocationId");
         this.executionTime = executionTime;
@@ -48,7 +58,8 @@ public class OriginMetadata {
 
         OriginMetadata that = (OriginMetadata) o;
 
-        return executionTime == that.executionTime && buildInvocationId.equals(that.buildInvocationId);
+        return executionTime == that.executionTime
+            && buildInvocationId.equals(that.buildInvocationId);
     }
 
     @Override

@@ -17,10 +17,9 @@ package org.gradle.util
 
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.gradle.api.Task
-import org.gradle.api.internal.AsmBackedClassGenerator
-import org.gradle.api.internal.DefaultInstantiatorFactory
+import org.gradle.internal.instantiation.DefaultInstantiatorFactory
 import org.gradle.api.internal.FeaturePreviews
-import org.gradle.api.internal.InstantiatorFactory
+import org.gradle.internal.instantiation.InstantiatorFactory
 import org.gradle.api.internal.file.DefaultFilePropertyFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.file.TestFiles
@@ -56,8 +55,7 @@ class TestUtil {
     }
 
     static InstantiatorFactory instantiatorFactory() {
-        def generator = new AsmBackedClassGenerator()
-        return new DefaultInstantiatorFactory(generator, new TestCrossBuildInMemoryCacheFactory())
+        return new DefaultInstantiatorFactory(new TestCrossBuildInMemoryCacheFactory())
     }
 
     static ObjectFactory objectFactory() {
@@ -97,28 +95,6 @@ class TestUtil {
 
     public <T extends Task> T task(Class<T> type) {
         return createTask(type, createRootProject(this.rootDir))
-    }
-
-    public <T extends Task> T task(Class<T> type, Map taskFields) {
-        def task = createTask(type, createRootProject(rootDir))
-        hackInTaskProperties(type, task, taskFields)
-        return task
-    }
-
-    private static void hackInTaskProperties(Class type, Task task, Map args) {
-        args.each { k, v ->
-            def field = type.getDeclaredFields().find { it.name == k }
-            if (!field) {
-                field = type.getSuperclass().getDeclaredFields().find { it.name == k }
-            }
-            if (field) {
-                field.setAccessible(true)
-                field.set(task, v)
-            } else {
-                //I'm feeling lucky
-                task."$k" = v
-            }
-        }
     }
 
     static <T extends Task> T createTask(Class<T> type, ProjectInternal project) {

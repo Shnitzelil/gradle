@@ -12,8 +12,9 @@
 # ----
 !/.idea
 /.idea/*
+!/.idea/codeStyles
 !/.idea/inspectionProfiles
-.idea
+*/**/.idea
 .shelf
 /*.iml
 /*.ipr
@@ -31,6 +32,7 @@
 /subprojects/*/out
 /.teamcity/*.iml
 /.teamcity/target
+!/.teamcity/Gradle_Check_dsl.iml
 
 # Eclipse
 # -------
@@ -49,7 +51,7 @@ atlassian-ide-plugin.xml
 
 # Vim
 # ---
-*.sw[op]
+*.sw[nop]
 
 # Emacs
 # -----
